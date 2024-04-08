@@ -52,13 +52,17 @@ module "hub_network" {
     {
       name : "AzureFirewallSubnet"
       address_prefixes : var.hub_firewall_subnet_address_prefix
-      private_endpoint_network_policies_enabled : true
+      private_endpoint_network_policies_enabled : true 
       private_link_service_network_policies_enabled : false
     },
     {
       name : "AzureBastionSubnet"
       address_prefixes : var.hub_bastion_subnet_address_prefix
+      #private endpoint is the service consumer,like Bastion VM
+      # we need to enable private endpoint in Bastion , so its true here 
       private_endpoint_network_policies_enabled : true
+      #private link service is the service provider , like ACR
+      # we dont need to enable private link service here, so its false here 
       private_link_service_network_policies_enabled : false
     }
   ]
@@ -317,6 +321,28 @@ module "key_vault" {
   log_analytics_workspace_id      = module.log_analytics_workspace.id
 }
 
+/*
+subnet_id是Bastion VM的subnet，在这个subnet中创建一个endpoint，这个endpoint是连接到acr的。private_connection_resource_id中确定是连接到acr的
+Bastion VM通过这个endpint就可以访问到ACR了
+*/
+module "acr_private_endpoint" {
+  source                         = "./modules/private_endpoint"
+  name                           = "${module.container_registry.name}PrivateEndpoint"
+  location                       = var.location
+  resource_group_name            = azurerm_resource_group.rg.name
+  subnet_id                      = module.aks_network.subnet_ids[var.vm_subnet_name]
+  tags                           = var.tags
+  private_connection_resource_id = module.container_registry.id
+  is_manual_connection           = false
+  subresource_name               = "registry"
+  private_dns_zone_group_name    = "AcrPrivateDnsZoneGroup"
+  private_dns_zone_group_ids     = [module.acr_private_dns_zone.id]
+}
+
+/*
+通过private endpoint（如上），bastion可以访问ACR，但是如果要通过FQDN访问acr的话，就需要给ACR一个DNS
+virtual_networks_to_link：Link VNET到这个private DNS，然后linked Vnet中的资源就可以访问ACR的private FQDN
+*/
 module "acr_private_dns_zone" {
   source                       = "./modules/private_dns_zone"
   name                         = "privatelink.azurecr.io"
@@ -365,19 +391,7 @@ module "blob_private_dns_zone" {
   }
 }
 
-module "acr_private_endpoint" {
-  source                         = "./modules/private_endpoint"
-  name                           = "${module.container_registry.name}PrivateEndpoint"
-  location                       = var.location
-  resource_group_name            = azurerm_resource_group.rg.name
-  subnet_id                      = module.aks_network.subnet_ids[var.vm_subnet_name]
-  tags                           = var.tags
-  private_connection_resource_id = module.container_registry.id
-  is_manual_connection           = false
-  subresource_name               = "registry"
-  private_dns_zone_group_name    = "AcrPrivateDnsZoneGroup"
-  private_dns_zone_group_ids     = [module.acr_private_dns_zone.id]
-}
+
 
 module "key_vault_private_endpoint" {
   source                         = "./modules/private_endpoint"
