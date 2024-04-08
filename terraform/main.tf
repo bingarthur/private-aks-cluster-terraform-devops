@@ -116,14 +116,25 @@ module "vnet_peering" {
   peering_name_2_to_1 = "${var.aks_vnet_name}To${var.hub_vnet_name}"
 }
 
+/*
+firewall module中默认创建了network rules和application rules
+具体注释见module文件
+*/
+
 module "firewall" {
   source                       = "./modules/firewall"
   name                         = var.firewall_name
   resource_group_name          = azurerm_resource_group.rg.name
   zones                        = var.firewall_zones
+  #Azure Firewall's Threat Intelligence-based filtering
+  #Off,Alers:send alert,dont block traffic,Deny:block traffic 
   threat_intel_mode            = var.firewall_threat_intel_mode
   location                     = var.location
+  #AZFW_Hub or AZFW_VNet
+  #AZFW_Hub: This SKU is used when you want to associate Azure Firewall with a Virtual Hub (vhub).It is used in the context of Azure Virtual WAN, a networking service that provides optimized and automated branch-to-branch connectivity.
+  #AZFW_VNet: This SKU is used for a standard deployment of Azure Firewall, where the firewall is associated with a specific Virtual Network (vNet). It's the default option and is typically intended for more basic firewall setups.
   sku_name                     = var.firewall_sku_name 
+  #Standard or Premium
   sku_tier                     = var.firewall_sku_tier
   pip_name                     = "${var.firewall_name}PublicIp"
   subnet_id                    = module.hub_network.subnet_ids["AzureFirewallSubnet"]

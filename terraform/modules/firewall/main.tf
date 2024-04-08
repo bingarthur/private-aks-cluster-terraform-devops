@@ -62,11 +62,42 @@ resource "azurerm_firewall_policy" "policy" {
   }
 }
 
+/*
+可以访问哪些外部的FQDN
+*/
 resource "azurerm_firewall_policy_rule_collection_group" "policy" {
   name               = "AksEgressPolicyRuleCollectionGroup"
   firewall_policy_id = azurerm_firewall_policy.policy.id
   priority           = 500
+  /*
+  #NAT rules
+  resource "azurerm_firewall_nat_rule_collection" "example" {
+  name                = "example"
+  azure_firewall_name = module.firewall.name
+  resource_group_name = module.firewall.resource_group_name
+  priority            = 100
+  action              = "Dnat"
 
+  rule {
+    name = "first_rule"
+    protocols = [
+      "TCP",
+    ]
+    source_addresses = [
+      "*",
+    ]
+    destination_addresses = [
+      module.firewall.public_ip_address,
+    ]
+    destination_ports = [
+      "80",
+    ]
+    translated_address = "<Private IP Address of Ingress1>"
+    translated_port    = "80"
+  }
+
+}
+  */
   application_rule_collection {
     name     = "ApplicationRules"
     priority = 500
@@ -188,7 +219,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "policy" {
     name     = "NetworkRules"
     priority = 400
     action   = "Allow"
-
+    #open egress traffic to port 123
     rule {
       name                  = "Time"
       source_addresses      = ["*"]
@@ -196,7 +227,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "policy" {
       destination_addresses = ["*"]
       protocols             = ["UDP"]
     }
-
+    #open egress traffic to port 53
     rule {
       name                  = "DNS"
       source_addresses      = ["*"]
@@ -204,7 +235,8 @@ resource "azurerm_firewall_policy_rule_collection_group" "policy" {
       destination_addresses = ["*"]
       protocols             = ["UDP"]
     }
-
+    #open egress traffic to any port of destination address
+    #service tags represent a group of IP address prefixes for specific Microsoft services in Azure.
     rule {
       name                  = "ServiceTags"
       source_addresses      = ["*"]
@@ -216,7 +248,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "policy" {
       ]
       protocols             = ["Any"]
     }
-
+    #Open to all
     rule {
       name                  = "Internet"
       source_addresses      = ["*"]
