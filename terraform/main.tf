@@ -272,6 +272,7 @@ module中也有注释
 ip_rules 是module中的变量，你要使用module就要给module中的变量赋值
 storage_account_ip_rules  是主程序的变量，通过这个变量给module中的变量赋值
 主程序中的变量
+这个storage account是用来存储VM boot logs
 */
 module "storage_account" {
   source                      = "./modules/storage_account"
@@ -290,32 +291,55 @@ module "storage_account" {
   #virtual_network_subnet_ids = module.virtual_machine.subnet_id #只允许VM访问这个storage account
 }
 
+/*
+创建一个Basetion host （network service which is used to connect to VM from Azure portal）
+*/
 module "bastion_host" {
   source                       = "./modules/bastion_host"
   name                         = var.bastion_host_name
   location                     = var.location
   resource_group_name          = azurerm_resource_group.rg.name
+  /*
+  this is the output which is defind in virtual_network modulefor "subnet in azurerm_subnet.subnet : subnet.name => subnet.id"
+  return value like below 
+  {
+  "AzureBastionSubnet" = "subnet-0a2846f2j276hsds"
+  "AzureFirewallSubnet" = "subnet-0d2768r2j431pqrs"
+  }
+  *****引用方法module.<module_name>.<module_output_var>
+  */
   subnet_id                    = module.hub_network.subnet_ids["AzureBastionSubnet"]
   log_analytics_workspace_id   = module.log_analytics_workspace.id
 }
 
+/*
+创建一个Basetion VM
+*/
 module "virtual_machine" {
   source                              = "./modules/virtual_machine"
   name                                = var.vm_name
-  size                                = var.vm_size
+  size                                = var.vm_size #Standard_DS1_v2
   location                            = var.location
-  public_ip                           = var.vm_public_ip
-  vm_user                             = var.admin_username
-  admin_ssh_public_key                = var.ssh_public_key
-  os_disk_image                       = var.vm_os_disk_image
+  #false，dont create PIP for this VM
+  #true, create 1 PIP for this VM , the logic is define in module
+  public_ip                           = var.vm_public_ip 
+  vm_user                             = var.admin_username #azadmin
+  admin_ssh_public_key                = var.ssh_public_key # key pair name which is uploaded to EC2 service
+  os_disk_image                       = var.vm_os_disk_image #见module注释
+  #if you add PIP to this VM , it will bind to a FQDN, like <domain_name>.<region>.cloudapp.azure.com
   domain_name_label                   = var.domain_name_label
   resource_group_name                 = azurerm_resource_group.rg.name
   subnet_id                           = module.aks_network.subnet_ids[var.vm_subnet_name]
-  os_disk_storage_account_type        = var.vm_os_disk_storage_account_type
-  boot_diagnostics_storage_account    = module.storage_account.primary_blob_endpoint
+  os_disk_storage_account_type        = var.vm_os_disk_storage_account_type #StandardSSD_LRS
+  boot_diagnostics_storage_account    = module.storage_account.primary_blob_endpoint #见module注释
+  ##enable monitor agent and Dependency agent in VM and send metrics to this log analytics 
+  # see comments in module
   log_analytics_workspace_id          = module.log_analytics_workspace.workspace_id
   log_analytics_workspace_key         = module.log_analytics_workspace.primary_shared_key
   log_analytics_workspace_resource_id = module.log_analytics_workspace.id
+
+  # 如果需要enable custom_script 见module注释 ，则在执行的时候，需要在tfvars中指定这4个变量,用来指定custom script的存储位置
+  # 这4个变量的default value是null，不指定的话， 这些settings就会被terraform omitted
   script_storage_account_name         = var.script_storage_account_name
   script_storage_account_key          = var.script_storage_account_key
   container_name                      = var.container_name
@@ -348,13 +372,16 @@ module "node_pool" {
   depends_on                   = [module.routetable]
 }
 
+/*
+
+*/
 module "key_vault" {
   source                          = "./modules/key_vault"
   name                            = var.key_vault_name
   location                        = var.location
   resource_group_name             = azurerm_resource_group.rg.name
   tenant_id                       = data.azurerm_client_config.current.tenant_id
-  sku_name                        = var.key_vault_sku_name
+  sku_name                        = var.key_vault_sku_name #standard
   tags                            = var.tags
   enabled_for_deployment          = var.key_vault_enabled_for_deployment
   enabled_for_disk_encryption     = var.key_vault_enabled_for_disk_encryption

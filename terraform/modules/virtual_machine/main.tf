@@ -96,6 +96,16 @@ resource "azurerm_linux_virtual_machine" "virtual_machine" {
     public_key = var.admin_ssh_public_key
   }
 
+  /*
+  os_disk_image变量如下
+  {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2" 
+    version   = "latest"
+  }
+  lookup用来获取key 然后如果获取不到就设置为null
+  */
   source_image_reference {
     offer     = lookup(var.os_disk_image, "offer", null)
     publisher = lookup(var.os_disk_image, "publisher", null)
@@ -103,6 +113,10 @@ resource "azurerm_linux_virtual_machine" "virtual_machine" {
     version   = lookup(var.os_disk_image, "version", null)
   }
 
+  /*
+  it enables a feature which allows you to get the console screenshot and boot log (serial log) of a virtual machine.
+  This can be helpful in diagnosing problems that might occur early in the boot process before the operating system loads.
+  */
   boot_diagnostics {
     storage_account_uri = var.boot_diagnostics_storage_account == "" ? null : var.boot_diagnostics_storage_account
   }
@@ -177,6 +191,11 @@ resource "azurerm_virtual_machine_extension" "monitor_agent" {
   depends_on = [azurerm_virtual_machine_extension.custom_script]
 }
 
+/*
+This gathered information supports Azure Monitor's Service Map feature
+which allows tracking your applications across various machines and breaking down how components interact. 
+描绘downstream ，upstream 关系图
+*/
 resource "azurerm_virtual_machine_extension" "dependency_agent" {
   name                       = "${var.name}DependencyAgent"
   virtual_machine_id         = azurerm_linux_virtual_machine.virtual_machine.id
