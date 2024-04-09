@@ -31,6 +31,8 @@ resource "azurerm_resource_group" "rg" {
   tags     = var.tags
 }
 
+#Enable container insight for AKS
+#Can be seen as Splunk
 module "log_analytics_workspace" {
   source                           = "./modules/log_analytics"
   name                             = var.log_analytics_workspace_name
@@ -39,6 +41,9 @@ module "log_analytics_workspace" {
   solution_plan_map                = var.solution_plan_map
 }
 
+/*
+创建Hub Vnet，并创建2个subnet给firewall and basetion service
+*/
 module "hub_network" {
   source                       = "./modules/virtual_network"
   resource_group_name          = azurerm_resource_group.rg.name
@@ -46,6 +51,7 @@ module "hub_network" {
   vnet_name                    = var.hub_vnet_name
   address_space                = var.hub_address_space
   tags                         = var.tags
+  # enable log analytics, 具体哪些logs 哪些metrics见virtual_network module
   log_analytics_workspace_id   = module.log_analytics_workspace.id
 
   subnets = [
@@ -68,42 +74,47 @@ module "hub_network" {
   ]
 }
 
+/*
+创建Spoke Vnet，并创建4个subnet
+default node pool, additonal node pool,pod subnet,bastion VM 
+*/
 module "aks_network" {
   source                       = "./modules/virtual_network"
   resource_group_name          = azurerm_resource_group.rg.name
   location                     = var.location
   vnet_name                    = var.aks_vnet_name
-  address_space                = var.aks_vnet_address_space
+  address_space                = var.aks_vnet_address_space #["10.0.0.0/16"]
   log_analytics_workspace_id   = module.log_analytics_workspace.id
 
   subnets = [
     {
       name : var.default_node_pool_subnet_name
-      address_prefixes : var.default_node_pool_subnet_address_prefix
+      address_prefixes : var.default_node_pool_subnet_address_prefix #["10.0.0.0/20"]
       private_endpoint_network_policies_enabled : true
       private_link_service_network_policies_enabled : false
     },
     {
       name : var.additional_node_pool_subnet_name
-      address_prefixes : var.additional_node_pool_subnet_address_prefix
+      address_prefixes : var.additional_node_pool_subnet_address_prefix #["10.0.16.0/20"]
       private_endpoint_network_policies_enabled : true
       private_link_service_network_policies_enabled : false
     },
     {
       name : var.pod_subnet_name
-      address_prefixes : var.pod_subnet_address_prefix
+      address_prefixes : var.pod_subnet_address_prefix #["10.0.32.0/20"]
       private_endpoint_network_policies_enabled : true
       private_link_service_network_policies_enabled : false
     },
     {
       name : var.vm_subnet_name
-      address_prefixes : var.vm_subnet_address_prefix
+      address_prefixes : var.vm_subnet_address_prefix #["10.0.48.0/20"]
       private_endpoint_network_policies_enabled : true
       private_link_service_network_policies_enabled : false
     }
   ]
 }
 
+#connect Hub Vnet with Spoke Vnet
 module "vnet_peering" {
   source              = "./modules/virtual_network_peering"
   vnet_1_name         = var.hub_vnet_name
@@ -119,6 +130,9 @@ module "vnet_peering" {
 /*
 firewall module中默认创建了network rules和application rules
 具体注释见module文件
+module里面并没有创建NAT rule，如果firewall后面的是一个VM要暴露22端口的话，使用NAT比较好，因为firewall是layer4 
+但是AKS的话，要暴露的是application，最好使用layer7 LB，比如AGIC+WAF
+如果非要使用firewall+ingress的形式，见架构图firewall-internal-load-balacer.png，创建NAT rule来暴露internal ingress（nginx）
 */
 
 module "firewall" {
@@ -141,6 +155,10 @@ module "firewall" {
   log_analytics_workspace_id   = module.log_analytics_workspace.id
 }
 
+/*
+在所有的node pool subnet中添加一个route table
+并添加一条route，这条route定义所有的outbound（0.0.0.0），都转发给firewall的private IP
+*/
 module "routetable" {
   source               = "./modules/route_table"
   resource_group_name  = azurerm_resource_group.rg.name
@@ -162,14 +180,18 @@ module "routetable" {
   }
 }
 
+/*
+创建一个ACR
+*/
 module "container_registry" {
   source                       = "./modules/container_registry"
   name                         = var.acr_name
   resource_group_name          = azurerm_resource_group.rg.name
   location                     = var.location
-  sku                          = var.acr_sku
-  admin_enabled                = var.acr_admin_enabled
-  georeplication_locations     = var.acr_georeplication_locations
+  sku                          = var.acr_sku #["Basic", "Standard", "Premium"]
+  admin_enabled                = var.acr_admin_enabled # true
+  georeplication_locations     = var.acr_georeplication_locations #Dont need geo replica by default
+  # enable log analytics, 具体哪些logs 哪些metrics见container_registry module
   log_analytics_workspace_id   = module.log_analytics_workspace.id
 }
 
@@ -245,14 +267,27 @@ resource "random_string" "storage_account_suffix" {
   numeric  = false
 }
 
+/*
+module中也有注释
+ip_rules 是module中的变量，你要使用module就要给module中的变量赋值
+storage_account_ip_rules  是主程序的变量，通过这个变量给module中的变量赋值
+主程序中的变量
+*/
 module "storage_account" {
   source                      = "./modules/storage_account"
   name                        = "${local.storage_account_prefix}${random_string.storage_account_suffix.result}"
   location                    = var.location
   resource_group_name         = azurerm_resource_group.rg.name
-  account_kind                = var.storage_account_kind
-  account_tier                = var.storage_account_tier
-  replication_type            = var.storage_account_replication_type
+  account_kind                = var.storage_account_kind #StorageV2
+  account_tier                = var.storage_account_tier #["Standard", "Premium"]
+  replication_type            = var.storage_account_replication_type #LRS
+  #whether the hierarchical namespace (HNS) is enabled for that account.
+  #a hierarchical namespace enables Azure Data Lake Storage Gen2 features and is required to create a Data Lake Storage Gen2 account
+  #Once you enable the HNS on a storage account, it can't be disabled.
+  is_hns_enabled              = var.storage_account_is_hns_enabled # default false
+  #默认的storage account是允许所有访问，如果要设置访问列表的话，uncomment below code
+  #ip_rules                   = var.storage_account_ip_rules
+  #virtual_network_subnet_ids = module.virtual_machine.subnet_id #只允许VM访问这个storage account
 }
 
 module "bastion_host" {

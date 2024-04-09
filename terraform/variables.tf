@@ -527,6 +527,24 @@ variable "storage_account_replication_type" {
   }
 }
 
+variable "storage_account_is_hns_enabled" {
+  description = "(Optional) whether the hierarchical namespace (HNS) is enabled for this account"
+  default     = "false"
+  type        = bool
+}
+
+variable "storage_account_ip_rules" {
+    description = "Specifies IP rules for the storage account"
+    default     = []
+    type        = list(string)  
+}
+
+variable "torage_account_virtual_network_subnet_ids" {
+    description = "Specifies a list of resource ids for subnets"
+    default     = []
+    type        = list(string)  
+}
+
 variable "key_vault_name" {
   description = "Specifies the name of the key vault."
   type        = string
