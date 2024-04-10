@@ -88,6 +88,22 @@ resource "azurerm_public_ip" "appgw" {
      priority                   = 100
    }
 
+   autoscale_configuration = {
+    min_capacity = 1
+    max_capacity = 12
+  }
+
+
+  #waf module - https://github.com/kumarvna/terraform-azurerm-application-gateway/blob/v1.1.0/main.tf
+  waf_configuration{
+    enabled = true
+    rule_set_type            = "OWASP"
+    rule_set_version         = "3.1"
+    file_upload_limit_mb     = 100
+    request_body_check       = true
+    max_request_body_size_kb = 128
+  }
+
    tags = var.tags
 
    depends_on = [azurerm_public_ip.appgw]

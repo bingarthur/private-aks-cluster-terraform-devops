@@ -293,7 +293,11 @@ module "appgw"{
   app_gateway_sku                     = var.app_gateway_sku
   app_gateway_tier                    = var.app_gateway_tier
   appgw_subnet_id                     = module.aks_network.subnet_ids[var.appgw_subnet_name]
-  agrc_object_id                      = module.aks.kubelet_identity_object_id
+  agrc_object_id                      = module.aks_cluster.kubelet_identity_object_id
+
+  tags = {
+    ExampleTag = "ExampleValue"
+  }
 }
 
 

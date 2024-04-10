@@ -726,12 +726,14 @@ variable "app_gateway_name" {
 
 variable "app_gateway_sku" {
    description = "Name of the Application Gateway SKU"
-   default     = "Standard_v2"
+   #default     = "Standard_v2"WAF_v2
+   default     = "WAF_v2"
 }
 
 variable "app_gateway_tier" {
    description = "Tier of the Application Gateway tier"
-   default     = "Standard_v2"
+   #default     = "Standard_v2"
+   default     = "WAF_v2"
 }
 
  variable "agrc_object_id"{
