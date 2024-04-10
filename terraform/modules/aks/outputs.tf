@@ -14,6 +14,13 @@ output "aks_identity_principal_id" {
   description = "Specifies the principal id of the managed identity of the AKS cluster."
 }
 
+/*
+output "agic_identity_object_id" {
+  value       = azurerm_kubernetes_cluster.aks_cluster.ingress_application_gateway.ingress_application_gateway_identity.object_id
+  description = "Specifies the principal id of the managed identity of the AKS cluster."
+}
+*/
+
 output "kubelet_identity_object_id" {
   value       = azurerm_kubernetes_cluster.aks_cluster.kubelet_identity.0.object_id
   description = "Specifies the object id of the kubelet identity of the AKS cluster."

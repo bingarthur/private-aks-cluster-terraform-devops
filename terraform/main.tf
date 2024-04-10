@@ -110,6 +110,12 @@ module "aks_network" {
       address_prefixes : var.vm_subnet_address_prefix #["10.0.48.0/20"]
       private_endpoint_network_policies_enabled : true
       private_link_service_network_policies_enabled : false
+    },
+    {
+      name : var.appgw_subnet_name
+      address_prefixes : var.appgw_subnet_address_prefix #["10.0.64.0/27"]
+      #private_endpoint_network_policies_enabled : true
+      #private_link_service_network_policies_enabled : false
     }
   ]
 }
@@ -204,45 +210,92 @@ module "aks_cluster" {
   kubernetes_version                       = var.kubernetes_version
   dns_prefix                               = lower(var.aks_cluster_name)
   private_cluster_enabled                  = true
-  automatic_channel_upgrade                = var.automatic_channel_upgrade
-  sku_tier                                 = var.sku_tier
+  automatic_channel_upgrade                = var.automatic_channel_upgrade #if you dont want to enable auto upgrading, set it to none
+  sku_tier                                 = var.sku_tier #free or paid
   default_node_pool_name                   = var.default_node_pool_name
-  default_node_pool_vm_size                = var.default_node_pool_vm_size
+  default_node_pool_vm_size                = var.default_node_pool_vm_size #Standard_F8s_v2
   vnet_subnet_id                           = module.aks_network.subnet_ids[var.default_node_pool_subnet_name]
-  default_node_pool_availability_zones     = var.default_node_pool_availability_zones
-  default_node_pool_node_labels            = var.default_node_pool_node_labels
-  default_node_pool_node_taints            = var.default_node_pool_node_taints
+  default_node_pool_availability_zones     = var.default_node_pool_availability_zones #["1", "2", "3"] 
+  default_node_pool_node_labels            = var.default_node_pool_node_labels #add labels to nodes
+  #这个参数官方文档没有，官方文档使用的是only_critical_addons_enabled 
+  #(Optional) Enabling this option will taint default node pool with CriticalAddonsOnly=true:NoSchedule taint
+  #default_node_pool_node_taints            = var.default_node_pool_node_taints
+  #
+  #如果要修改一些default node pool配置，比如sku，需要把nodepool删除，然后重新建一个，这个时候需要指定下方的参数
+  #temporary_name_for_rotation             = "default_nodepool_temp_name"
+
+  /*
+  enable cluster auto scaling or not ,default is true
+  由于这个cluster使用的是Azure CNI plugin，所以需要提前规划好nodepool的ip，这里default nodepool的subnet是["10.0.0.0/20"]
+  10.0.0.1 ～ 10.0.15.254 （一共16*（255-5）=4000个IP）。 一个node 50个pods，最多10个nodes，也就是最多500个pods，占用500个sunbet IP。远远小于4000
+  */
   default_node_pool_enable_auto_scaling    = var.default_node_pool_enable_auto_scaling
-  default_node_pool_enable_host_encryption = var.default_node_pool_enable_host_encryption
-  default_node_pool_enable_node_public_ip  = var.default_node_pool_enable_node_public_ip
-  default_node_pool_max_pods               = var.default_node_pool_max_pods
-  default_node_pool_max_count              = var.default_node_pool_max_count
-  default_node_pool_min_count              = var.default_node_pool_min_count
-  default_node_pool_node_count             = var.default_node_pool_node_count
-  default_node_pool_os_disk_type           = var.default_node_pool_os_disk_type
+  default_node_pool_max_count              = var.default_node_pool_max_count #10
+  default_node_pool_min_count              = var.default_node_pool_min_count #3 
+  default_node_pool_node_count             = var.default_node_pool_node_count #3 ,creat 3nodes in 3 availability_zones
+
+  default_node_pool_enable_host_encryption = var.default_node_pool_enable_host_encryption #false
+  default_node_pool_enable_node_public_ip  = var.default_node_pool_enable_node_public_ip #false
+  default_node_pool_max_pods               = var.default_node_pool_max_pods # 50 Pods
+  default_node_pool_os_disk_type           = var.default_node_pool_os_disk_type #Ephemeral or managed(os disk)
   tags                                     = var.tags
-  network_dns_service_ip                   = var.network_dns_service_ip
-  network_plugin                           = var.network_plugin
-  outbound_type                            = "userDefinedRouting"
-  network_service_cidr                     = var.network_service_cidr
+  network_dns_service_ip                   = var.network_dns_service_ip #define DNS server IP kube-dns or coredns (optional)
+  network_plugin                           = var.network_plugin #Azure CNI
+  outbound_type                            = "userDefinedRouting" #default is loadBalancer. in this case , we use UDR+firewall
+  network_service_cidr                     = var.network_service_cidr #k8s中svc使用的ip range
   log_analytics_workspace_id               = module.log_analytics_workspace.id
-  role_based_access_control_enabled        = var.role_based_access_control_enabled
+  role_based_access_control_enabled        = var.role_based_access_control_enabled # Role Based Access Control with Azure Active Directory is enabled
   tenant_id                                = data.azurerm_client_config.current.tenant_id
-  admin_group_object_ids                   = var.admin_group_object_ids
-  azure_rbac_enabled                       = var.azure_rbac_enabled
+  admin_group_object_ids                   = var.admin_group_object_ids #(Optional) A list of Object IDs of Azure Active Directory Groups which should have Admin Role on the Cluster.
+  azure_rbac_enabled                       = var.azure_rbac_enabled #use Azure RBAC for authorization
+
+  #use this user name and ssh key to ssh to worker node linux system 
   admin_username                           = var.admin_username
   ssh_public_key                           = var.ssh_public_key
+
   keda_enabled                             = var.keda_enabled
   vertical_pod_autoscaler_enabled          = var.vertical_pod_autoscaler_enabled
   workload_identity_enabled                = var.workload_identity_enabled
   oidc_issuer_enabled                      = var.oidc_issuer_enabled
-  open_service_mesh_enabled                = var.open_service_mesh_enabled
+  open_service_mesh_enabled                = var.open_service_mesh_enabled # equivalent Istio, disable it if you want to use istio
   image_cleaner_enabled                    = var.image_cleaner_enabled
   azure_policy_enabled                     = var.azure_policy_enabled
+  #every time a new service is created within the Kubernetes namespace, the HTTP application routing solution creates a DNS name for that service. 
+  #his DNS name is then made publicly accessible, allowing the service to be accessible from the internet.
+  #better to disable it 
   http_application_routing_enabled         = var.http_application_routing_enabled
+
+  #enable AGIC
+  gateway_id                               = module.appgw.appgw_id
+  subnet_cidr                              = var.appgw_subnet_address_prefix
+  subnet_id                                = module.aks_network.subnet_ids[var.appgw_subnet_name]
+
+  #enable AGIC
+  ingress_application_gateway = {
+    enabled = true
+    gateway_id = module.appgw.appgw_id
+    #gateway_name = "yourGatewayName"
+    subnet_cidr = var.appgw_subnet_address_prefix
+    subnet_id = module.aks_network.subnet_ids[var.appgw_subnet_name]
+  }
 
   depends_on                               = [module.routetable]
 }
+
+
+module "appgw"{
+  source                              = "./modules/appgw"
+  location                            = var.location
+  resource_group_name                 = azurerm_resource_group.rg.name
+  resource_group_id                   = azurerm_resource_group.rg.id
+  app_gateway_name                    = var.app_gateway_name
+  app_gateway_id                      = module.appgw.appgw_id
+  app_gateway_sku                     = var.app_gateway_sku
+  app_gateway_tier                    = var.app_gateway_tier
+  appgw_subnet_id                     = module.aks_network.subnet_ids[var.appgw_subnet_name]
+  agrc_object_id                      = module.aks.kubelet_identity_object_id
+}
+
 
 resource "azurerm_role_assignment" "network_contributor" {
   scope                = azurerm_resource_group.rg.id
@@ -383,14 +436,16 @@ module "key_vault" {
   tenant_id                       = data.azurerm_client_config.current.tenant_id
   sku_name                        = var.key_vault_sku_name #standard
   tags                            = var.tags
+  #When this set to true 
+  #the Azure platform can use the Key Vault object during deployment of an Azure resource (in this case, a VM) that requires the use of these secrets.
   enabled_for_deployment          = var.key_vault_enabled_for_deployment
-  enabled_for_disk_encryption     = var.key_vault_enabled_for_disk_encryption
-  enabled_for_template_deployment = var.key_vault_enabled_for_template_deployment
-  enable_rbac_authorization       = var.key_vault_enable_rbac_authorization
-  purge_protection_enabled        = var.key_vault_purge_protection_enabled
-  soft_delete_retention_days      = var.key_vault_soft_delete_retention_days
-  bypass                          = var.key_vault_bypass
-  default_action                  = var.key_vault_default_action
+  enabled_for_disk_encryption     = var.key_vault_enabled_for_disk_encryption #true, 见variables.tf
+  enabled_for_template_deployment = var.key_vault_enabled_for_template_deployment #true, 见variables.tf
+  enable_rbac_authorization       = var.key_vault_enable_rbac_authorization #true, 见variables.tf
+  purge_protection_enabled        = var.key_vault_purge_protection_enabled #true, 见variables.tf
+  soft_delete_retention_days      = var.key_vault_soft_delete_retention_days #30days
+  bypass                          = var.key_vault_bypass #azure service bypass  network ACL
+  default_action                  = var.key_vault_default_action #allow all connection
   log_analytics_workspace_id      = module.log_analytics_workspace.id
 }
 

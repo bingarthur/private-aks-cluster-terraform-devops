@@ -33,6 +33,11 @@ variable "resource_group_name" {
   type        = string
 }
 
+variable "resource_group_id" {
+  description = "Specifies the resource group id"
+  type        = string
+}
+
 variable "hub_vnet_name" {
   description = "Specifies the name of the hub virtual virtual network"
   default     = "HubVNet"
@@ -81,9 +86,21 @@ variable "vm_subnet_address_prefix" {
   type        = list(string)
 }
 
+variable "appgw_subnet_name" {
+  description = "Specifies the name of the jumpbox subnet"
+  default     = "VmSubnet"
+  type        = string
+}
+
+variable "appgw_subnet_address_prefix" {
+  description = "Specifies the address prefix of the jumbox subnet"
+  default     = ["10.0.48.0/20"]
+  type        = list(string)
+}
+
 variable "aks_cluster_name" {
   description = "(Required) Specifies the name of the AKS cluster."
-  default     = "BaboAks"
+  default     = "arthuraks"
   type        = string
 }
 
@@ -699,4 +716,35 @@ variable "http_application_routing_enabled" {
   description = "(Optional) Should HTTP Application Routing be enabled?"
   type        = bool
   default     = false
+}
+
+variable "app_gateway_name" {
+  description = "Specifies the name of the application gateway"
+  default     = "appgw-1"
+  type        = string
+}
+
+variable "app_gateway_sku" {
+   description = "Name of the Application Gateway SKU"
+   default     = "Standard_v2"
+}
+
+variable "app_gateway_tier" {
+   description = "Tier of the Application Gateway tier"
+   default     = "Standard_v2"
+}
+
+ variable "agrc_object_id"{
+  description = "The object id of AGIC"
+  type = string
+ }
+
+ variable "appgw_subnet_id" {
+  description = "The ID of a Subnet where the application gateway should exist. Changing this forces a new resource to be created."
+  type        = string
+}
+
+ variable "appgw_id" {
+  description = "The ID of appgw"
+  type        = string
 }
